@@ -7,6 +7,8 @@ from pathlib import Path
 from .checker import UrlCheckResult, check_url
 from .extractor import UrlSource, extract_url_sources
 
+SOURCE_FILES_DELIMITER = "|"
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -51,7 +53,9 @@ def _write_csv(
                     "status_code": result.status_code,
                     "final_url": result.final_url,
                     "error": result.error,
-                    "source_files": ";".join(sorted(set(url_to_files.get(result.url, [])))),
+                    "source_files": SOURCE_FILES_DELIMITER.join(
+                        sorted(set(url_to_files.get(result.url, [])))
+                    ),
                 }
             )
 
@@ -77,4 +81,3 @@ def main() -> int:
         f"Blocked by Senso: {blocked_count}. Results written to {args.output}."
     )
     return 0
-

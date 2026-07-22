@@ -6,7 +6,8 @@ import re
 from zipfile import BadZipFile, ZipFile
 
 
-URL_PATTERN = re.compile(r"https?://[^\s<>\]\"')]+")
+URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+")
+TRAILING_PUNCTUATION = ".,;:!?>'\""
 SUPPORTED_SUFFIXES = {".md", ".markdown", ".docx", ".docm", ".pptx", ".pptm"}
 
 
@@ -26,8 +27,18 @@ def _dedupe_preserve_order(items: list[str]) -> list[str]:
     return ordered
 
 
+def _trim_trailing_punctuation(url: str) -> str:
+    trimmed = url.rstrip(TRAILING_PUNCTUATION)
+    while trimmed.endswith(")") and trimmed.count("(") < trimmed.count(")"):
+        trimmed = trimmed[:-1]
+    while trimmed.endswith("]") and trimmed.count("[") < trimmed.count("]"):
+        trimmed = trimmed[:-1]
+    return trimmed
+
+
 def _extract_urls_from_text(text: str) -> list[str]:
-    return _dedupe_preserve_order(URL_PATTERN.findall(text))
+    cleaned_urls = [_trim_trailing_punctuation(url) for url in URL_PATTERN.findall(text)]
+    return _dedupe_preserve_order(cleaned_urls)
 
 
 def _extract_urls_from_ooxml(path: Path) -> list[str]:
@@ -48,6 +59,7 @@ def _extract_urls_from_ooxml(path: Path) -> list[str]:
 
 
 def extract_urls_from_file(path: Path) -> list[str]:
+    """Extract URLs from one supported file (.md/.markdown/.docx/.docm/.pptx/.pptm)."""
     suffix = path.suffix.lower()
     if suffix in {".md", ".markdown"}:
         try:
@@ -61,14 +73,15 @@ def extract_urls_from_file(path: Path) -> list[str]:
 
 
 def discover_supported_files(root: Path) -> list[Path]:
+    """Discover supported file types recursively under a root folder."""
     return [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES]
 
 
 def extract_url_sources(roots: list[Path]) -> list[UrlSource]:
+    """Extract URL + source-file pairs from all supported files under all roots."""
     sources: list[UrlSource] = []
     for root in roots:
         for file_path in discover_supported_files(root):
             for url in extract_urls_from_file(file_path):
                 sources.append(UrlSource(file_path=str(file_path.resolve()), url=url))
     return sources
-

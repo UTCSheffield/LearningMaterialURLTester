@@ -16,6 +16,18 @@ class ExtractorTests(unittest.TestCase):
 
             self.assertEqual(urls, ["https://example.com", "http://example.org/docs"])
 
+    def test_extract_urls_trims_only_unmatched_closing_punctuation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "lesson.md"
+            file_path.write_text(
+                "One https://example.com/path(a) and two https://example.com/path(b)).",
+                encoding="utf-8",
+            )
+
+            urls = extract_urls_from_file(file_path)
+
+            self.assertEqual(urls, ["https://example.com/path(a)", "https://example.com/path(b)"])
+
     def test_extract_urls_from_docx(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             file_path = Path(tmp_dir) / "lesson.docx"
@@ -28,6 +40,22 @@ class ExtractorTests(unittest.TestCase):
             urls = extract_urls_from_file(file_path)
 
             self.assertEqual(urls, ["https://example.com/doc"])
+
+    def test_extract_urls_from_docx_with_distinct_urls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "lesson.docx"
+            with ZipFile(file_path, "w") as archive:
+                archive.writestr(
+                    "word/document.xml",
+                    '<w:t>https://example.com/one?x=(a)&q=1</w:t><w:t>https://example.com/two?y=[b]&z=2</w:t>',
+                )
+
+            urls = extract_urls_from_file(file_path)
+
+            self.assertEqual(
+                urls,
+                ["https://example.com/one?x=(a)&q=1", "https://example.com/two?y=[b]&z=2"],
+            )
 
     def test_extract_urls_from_pptx_relationship(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

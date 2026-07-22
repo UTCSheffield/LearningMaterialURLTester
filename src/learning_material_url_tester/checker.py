@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+MAX_BODY_READ_BYTES = 20000
+
 
 @dataclass(frozen=True)
 class UrlCheckResult:
@@ -23,12 +25,13 @@ def _looks_blocked_by_senso(body: str, final_url: str | None) -> bool:
 
 
 def check_url(url: str, timeout: int = 15) -> UrlCheckResult:
+    """Fetch a URL and flag responses that look like Senso blocking pages."""
     req = Request(url, headers={"User-Agent": "LearningMaterialURLTester/0.1"})
     try:
         with urlopen(req, timeout=timeout) as response:
             status = getattr(response, "status", None)
             final_url = response.geturl()
-            body = response.read(20000).decode("utf-8", errors="ignore")
+            body = response.read(MAX_BODY_READ_BYTES).decode("utf-8", errors="ignore")
             blocked = _looks_blocked_by_senso(body, final_url)
             return UrlCheckResult(
                 url=url,
@@ -38,9 +41,13 @@ def check_url(url: str, timeout: int = 15) -> UrlCheckResult:
                 error=None,
             )
     except HTTPError as exc:
-        body = exc.read(20000).decode("utf-8", errors="ignore")
+        body = ""
+        try:
+            body = exc.read(MAX_BODY_READ_BYTES).decode("utf-8", errors="ignore")
+        except OSError:
+            pass
         final_url = exc.geturl()
-        blocked = _looks_blocked_by_senso(body, final_url) or exc.code == 451
+        blocked = _looks_blocked_by_senso(body, final_url)
         return UrlCheckResult(
             url=url,
             blocked_by_senso=blocked,
@@ -56,4 +63,3 @@ def check_url(url: str, timeout: int = 15) -> UrlCheckResult:
             final_url=None,
             error=str(exc),
         )
-

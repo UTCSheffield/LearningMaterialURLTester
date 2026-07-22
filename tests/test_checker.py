@@ -21,8 +21,8 @@ class _FakeResponse:
     def __enter__(self) -> "_FakeResponse":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
-        return None
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        return False
 
 
 class CheckerTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class CheckerTests(unittest.TestCase):
                 code=451,
                 msg="Unavailable For Legal Reasons",
                 hdrs=None,
-                fp=BytesIO(b""),
+                fp=BytesIO(b"This site is blocked by Senso."),
             )
 
         with patch("learning_material_url_tester.checker.urlopen", fake_urlopen):
