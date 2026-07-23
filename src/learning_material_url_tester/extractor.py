@@ -5,10 +5,28 @@ from pathlib import Path
 import re
 from zipfile import BadZipFile, ZipFile
 
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
-URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+")
+
+URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+|www\.[^\s<>'\"]+")
 TRAILING_PUNCTUATION = ".,;:!?>'\""
-SUPPORTED_SUFFIXES = {".md", ".markdown", ".docx", ".docm", ".pptx", ".pptm"}
+SUPPORTED_SUFFIXES = {".md", ".markdown", ".docx", ".docm", ".pptx", ".pptm", ".pdf"}
+
+# URL prefixes that are namespace/schema identifiers, not real web pages — skip them entirely.
+URL_SKIP_PREFIXES = (
+    "https://schemas.microsoft.com/",
+    "http://schemas.microsoft.com/",
+    "https://schemas.openxmlformats.org/",
+    "http://schemas.openxmlformats.org/",
+    "https://purl.org/dc/",
+    "http://purl.org/dc/",
+    "http://dublincore.org/schemas/"
+)
+
+
+def _should_skip_url(url: str) -> bool:
+    return any(url.startswith(prefix) for prefix in URL_SKIP_PREFIXES)
 
 
 @dataclass(frozen=True)
@@ -38,7 +56,7 @@ def _trim_trailing_punctuation(url: str) -> str:
 
 def _extract_urls_from_text(text: str) -> list[str]:
     cleaned_urls = [_trim_trailing_punctuation(url) for url in URL_PATTERN.findall(text)]
-    return _dedupe_preserve_order(cleaned_urls)
+    return _dedupe_preserve_order([url for url in cleaned_urls if not _should_skip_url(url)])
 
 
 def _extract_urls_from_ooxml(path: Path) -> list[str]:
@@ -55,7 +73,21 @@ def _extract_urls_from_ooxml(path: Path) -> list[str]:
                 urls.extend(URL_PATTERN.findall(content))
     except (BadZipFile, OSError):
         return []
-    return _dedupe_preserve_order(urls)
+    trimmed = [_trim_trailing_punctuation(u) for u in urls]
+    return _dedupe_preserve_order([url for url in trimmed if not _should_skip_url(url)])
+
+
+def _extract_urls_from_pdf(path: Path) -> list[str]:
+    urls: list[str] = []
+    try:
+        reader = PdfReader(str(path))
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            urls.extend(URL_PATTERN.findall(text))
+    except (PdfReadError, OSError, Exception):
+        return []
+    trimmed = [_trim_trailing_punctuation(u) for u in urls]
+    return _dedupe_preserve_order([url for url in trimmed if not _should_skip_url(url)])
 
 
 def extract_urls_from_file(path: Path) -> list[str]:
@@ -69,6 +101,8 @@ def extract_urls_from_file(path: Path) -> list[str]:
         return _extract_urls_from_text(text)
     if suffix in {".docx", ".docm", ".pptx", ".pptm"}:
         return _extract_urls_from_ooxml(path)
+    if suffix == ".pdf":
+        return _extract_urls_from_pdf(path)
     return []
 
 

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "UTCSheffield"}]
+dependencies = ["pypdf>=4.0"]
 
 [project.scripts]
 learning-material-url-tester = "learning_material_url_tester.cli:main"
