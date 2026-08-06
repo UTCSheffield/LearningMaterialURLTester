@@ -9,10 +9,14 @@ and pick the database file in the sidebar.
 """
 from __future__ import annotations
 
+import csv
+import re
 import sqlite3
 import sys
 from collections import defaultdict
+from io import StringIO
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -119,6 +123,27 @@ def _all_rows_in_node(node: dict) -> list[dict]:
     return result
 
 
+def _host_from_url(url: str) -> str:
+    """Extract hostname from a URL, tolerating bare domains."""
+    parsed = urlparse(url if "://" in url else f"https://{url}")
+    return parsed.hostname or ""
+
+
+def _slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return slug or "unknown"
+
+
+def _unique_hosts_csv(urls: list[str]) -> str:
+    hosts = sorted({_host_from_url(url) for url in urls if _host_from_url(url)})
+    buf = StringIO()
+    writer = csv.writer(buf)
+    # writer.writerow(["host"])
+    for host in hosts:
+        writer.writerow([host])
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # Rendering helpers
 # ---------------------------------------------------------------------------
@@ -204,12 +229,16 @@ def page_overview(rows: list[dict]) -> None:
 
     cola1, cola2, cola3, cola4 = st.columns(4)
     tested = counts.get("ok", 0) + counts.get("blocked", 0) + counts.get("error", 0)
+    tested_pct = round(100 * tested / total) if total else 0
+    ok_pct = round(100 * counts.get("ok", 0) / tested) if tested else 0
+    blocked_pct = round(100 * counts.get("blocked", 0) / tested) if tested else 0
+    error_pct = round(100 * counts.get("error", 0) / tested) if tested else 0
     cola1.metric("Tested URLs", tested)
-    cola2.metric("✅ OK", f"{round(100 * counts.get("ok", 0)/ tested)}%")
-    cola3.metric("🚫 Blocked", f"{round(100 * counts.get("blocked", 0)/tested)}%")
-    cola4.metric("❌ Errors", f"{round(100 * counts.get("error", 0)/tested)}%")
+    cola2.metric("✅ OK", f"{ok_pct}%")
+    cola3.metric("🚫 Blocked", f"{blocked_pct}%")
+    cola4.metric("❌ Errors", f"{error_pct}%")
     if counts.get("unchecked", 0):
-        st.info(f"⬜ {counts['unchecked']} URL(s) not yet checked. {round(100 * tested/ total)}% checked")
+        st.info(f"⬜ {counts['unchecked']} URL(s) not yet checked. {tested_pct}% checked")
     
     st.divider()
 
@@ -232,16 +261,31 @@ def page_overview(rows: list[dict]) -> None:
     df = pd.DataFrame(sorted_reasons, columns=["Reason", "Count"])
     st.bar_chart(df.set_index("Reason"))
 
+    
+
     st.subheader("Detail")
     for reason, count in sorted_reasons:
+        reason_rows = [
+            row
+            for row in blocked_rows
+            if (row.get("block_reason") or "Unknown").strip() == reason
+        ]
+        urls_for_reason = [row["url"] for row in reason_rows]
+        csv_data = _unique_hosts_csv(urls_for_reason)
         with st.expander(f"**{reason}** — {count} URL(s)"):
-            for row in sorted(blocked_rows, key=lambda r: r["url"]):
-                if (row.get("block_reason") or "Unknown").strip() == reason:
-                    st.markdown(f"- [{row['url']}]({row['url']})")
-                    files = [f for f in (row.get("source_files") or "").split(SOURCE_FILES_DELIMITER) if f]
-                    if files:
-                        for f in files:
-                            st.caption(f"  📄 {f}")
+            st.download_button(
+                label="Download unique hosts CSV",
+                data=csv_data,
+                file_name=f"blocked_hosts_{_slugify(reason)}.csv",
+                mime="text/csv",
+                key=f"download_hosts_{_slugify(reason)}",
+            )
+            for row in sorted(reason_rows, key=lambda r: r["url"]):
+                st.markdown(f"- [{row['url']}]({row['url']})")
+                files = [f for f in (row.get("source_files") or "").split(SOURCE_FILES_DELIMITER) if f]
+                if files:
+                    for f in files:
+                        st.caption(f"  📄 {f}")
 
 
 # ---------------------------------------------------------------------------
